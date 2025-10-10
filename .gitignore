@@ -1,0 +1,33 @@
+# Archivos generados por el compilador
+*.tok
+*.tab
+*.dep
+*.quad
+
+# Archivos generados por PLY (Python Lex-Yacc)
+parsetab.py
+parser.out
+
+# Caché de Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Entornos virtuales
+venv/
+env/
+ENV/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
