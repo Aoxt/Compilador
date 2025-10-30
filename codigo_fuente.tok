@@ -30,13 +30,6 @@ PC                   ;                    Linea:10         Columna:26
 IMPCAD               impcad               Linea:11         Columna:3         
 ID                   mensaje              Linea:11         Columna:10        
 PC                   ;                    Linea:11         Columna:18        
-TYPE                 int                  Linea:12         Columna:3         
-ID                   error                Linea:12         Columna:7         
-COMA                 ,                    Linea:12         Columna:12        
-ID                   error                Linea:12         Columna:14        
-COMA                 ,                    Linea:12         Columna:19        
-ID                   error                Linea:12         Columna:21        
-PC                   ;                    Linea:12         Columna:26        
 LEERDIG              leerdig              Linea:14         Columna:3         
 ID                   resultado            Linea:14         Columna:11        
 PC                   ;                    Linea:14         Columna:20        

@@ -428,9 +428,10 @@ if __name__ == "__main__":
             parse_tree_root = parser.parse(lexer=lexer_wrapper)
 
             if parse_tree_root:
-                print("\n--- Árbol de Análisis Sintáctico ---")
-                # Llamada inicial a la función de impresión del árbol
-                print_parse_tree(parse_tree_root, prefix="", is_last=True)
+                print("Analisis sintactico correcto")
+                # print("\n--- Árbol de Análisis Sintáctico ---")
+                # # Llamada inicial a la función de impresión del árbol
+                # print_parse_tree(parse_tree_root, prefix="", is_last=True)
             else:
                 print("\nNo se pudo generar el árbol de análisis (error de sintaxis o entrada vacía).")
 
@@ -673,6 +674,60 @@ if __name__ == "__main__":
                 cuadruplos.append(('LEERCAD', None, None, id_var))
 
             return None
+        def generarCodigoMips(cuadrupos):
+            ensamblador = []
+
+            #Seccion de datos
+            ensamblador.append(".data")
+            variables = set()
+            for _, arg1, arg2, res in cuadruplos:
+                if isinstance(arg1, str): variables.add(arg1)
+                if isinstance(arg2, str): variables.add(arg2)
+                if isinstance(res, str): variables.add(res)
+            
+            for var in sorted(list(variables)):
+                ensamblador.append(f"    {var}: .word 0")
+            ensamblador.append('    newline: .asciiz "\\n"') # Para imprimir saltos de línea
+
+            # --- Sección de Código (.text) ---
+            ensamblador.append("\n.text")
+            ensamblador.append(".globl main")
+            ensamblador.append("main:")
+            
+            for op, arg1, arg2, res in cuadruplos:
+                ensamblador.append(f"\n# Cuádruplo: ({op}, {arg1}, {arg2}, {res})")
+                
+                if op == '=':
+                    if isinstance(arg1, int): # Asignación de un valor literal (ej: num1 = 3)
+                        ensamblador.append(f"    li $t0, {arg1}           # Carga el valor inmediato {arg1} en el registro $t0")
+                    else: # Asignación de otra variable (ej: suma = t4)
+                        ensamblador.append(f"    lw $t0, {arg1}        # Carga el valor de la variable '{arg1}' en $t0")
+                    ensamblador.append(f"    sw $t0, {res}         # Guarda el contenido de $t0 en la variable '{res}'")
+                
+                elif op in ('+', '-', '*', '/'):
+                    ensamblador.append(f"    lw $t0, {arg1}        # Carga '{arg1}' en $t0")
+                    ensamblador.append(f"    lw $t1, {arg2}        # Carga '{arg2}' en $t1")
+                    if op == '+': ensamblador.append("    add $t2, $t0, $t1   # $t2 = $t0 + $t1")
+                    if op == '-': ensamblador.append("    sub $t2, $t0, $t1   # $t2 = $t0 - $t1")
+                    if op == '*': ensamblador.append("    mul $t2, $t0, $t1   # $t2 = $t0 * $t1")
+                    if op == '/': ensamblador.append("    div $t2, $t0, $t1   # $t2 = $t0 / $t1")
+                    ensamblador.append(f"    sw $t2, {res}         # Guarda el resultado en la variable temporal '{res}'")
+
+                elif op == 'IMPDIG':
+                    ensamblador.append(f"    lw $a0, {arg1}        # Carga el valor a imprimir en el registro de argumento $a0")
+                    ensamblador.append("    li $v0, 1           # Carga el servicio de sistema 1 (print_int)")
+                    ensamblador.append("    syscall             # Ejecuta la llamada al sistema")
+                    # Imprimir un salto de línea para que se vea mejor
+                    ensamblador.append("    li $v0, 4           # Servicio 4 (print_string)")
+                    ensamblador.append("    la $a0, newline     # Carga la dirección de 'newline'")
+                    ensamblador.append("    syscall")
+
+                # --- Fin del programa ---
+                ensamblador.append("\n# Fin del programa")
+                ensamblador.append("    li $v0, 10          # Servicio 10 (exit)")
+                ensamblador.append("    syscall")
+            return "\n".join(ensamblador)
+
 
         # --- Generación de código intermedio (cuadruplos) ---
         cuadruplos = []
@@ -682,9 +737,9 @@ if __name__ == "__main__":
                 if isinstance(hijo, tuple) and hijo[0] == 'sentencias':
                     generar_cuadruplos(hijo, cuadruplos=cuadruplos)
                     break
-            print("\n--- Código Intermedio (Cuadruplos) ---")
-            for i, quad in enumerate(cuadruplos, 1):
-                print(f"{i:02}: {quad}")
+            # print("\n--- Código Intermedio (Cuadruplos) ---")
+            # for i, quad in enumerate(cuadruplos, 1):
+            #     print(f"{i:02}: {quad}")
 
              # Guardar los cuadruplos en un archivo .quad
             archivo_salida_quad = archivo_fuente.replace(".txt", ".quad")
@@ -695,6 +750,16 @@ if __name__ == "__main__":
                     op, arg1, arg2, res = quad
                     archivo_quad.write(f"{i:<5} {op:<10} {str(arg1):<15} {str(arg2):<15} {str(res):<15}\n")
 
+            codigo_final = generarCodigoMips(cuadruplos)
+            print("\nGeneracion de Codigo")
+            print(codigo_final)
+            
+            nombre_archivo_salida = archivo_fuente.replace(".txt", ".asm")
+            with open(nombre_archivo_salida, "w", encoding="utf-8") as f:
+                f.write(codigo_final)
+            print(f"\nCódigo ensamblador guardado en '{nombre_archivo_salida}'")
+
+        
 
     except ValueError as e:
         print(f"\nError durante el análisis léxico: {e}")

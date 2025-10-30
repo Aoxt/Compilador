@@ -14,7 +14,6 @@ ID    Lexema          Token          Tipo en Diccionario Tipo Declarado
 17    )               TESIS           Agrupación
 18    /               DIV             Operador aritmético
 20    impcad          IMPCAD          Palabra reservada
-21    error           ID              Identificador        
-22    leerdig         LEERDIG         Palabra reservada
-23    impdig          IMPDIG          Palabra reservada
-24    fin             FIN             Palabra reservada
+21    leerdig         LEERDIG         Palabra reservada
+22    impdig          IMPDIG          Palabra reservada
+23    fin             FIN             Palabra reservada
