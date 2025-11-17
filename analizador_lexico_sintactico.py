@@ -607,7 +607,8 @@ if __name__ == "__main__":
                     print(" -", err)
             else:
                 print("\nAnálisis semántico correcto.")
-            
+
+        #Generación de cuádruplos
         def generar_cuadruplos(nodo, temporales=None, cuadruplos=None):
             if temporales is None:
                 temporales = []
@@ -674,6 +675,8 @@ if __name__ == "__main__":
                 cuadruplos.append(('LEERCAD', None, None, id_var))
 
             return None
+        
+        #Generacion de codigo ensamblador
         def generarCodigoMips(cuadrupos):
             ensamblador = []
 
@@ -729,6 +732,131 @@ if __name__ == "__main__":
             return "\n".join(ensamblador)
 
 
+        # --- Optimizaciones ---
+        def is_variable(val):
+            return isinstance(val, str) and re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', val)
+
+        def find_rep(mapping, v):
+            # Encuentra la representación final de v en el mapping de copias
+            seen = set()
+            while v in mapping and mapping[v] != v and mapping[v] not in seen:
+                seen.add(v)
+                v = mapping[v]
+            return mapping.get(v, v)
+
+        def copy_propagation(cuads):
+            mapping = {}  # var -> representative (another var or const string)
+            new_quads = []
+            for op, a1, a2, res in cuads:
+                # Reemplaza operandos por sus representantes si existen
+                if is_variable(a1):
+                    rep = find_rep(mapping, a1)
+                    if rep is not None:
+                        a1 = rep
+                if is_variable(a2):
+                    rep = find_rep(mapping, a2)
+                    if rep is not None:
+                        a2 = rep
+
+                # Si es una copia simple (:=), actualizar mapping
+                if op == ':=' and a2 is None and is_variable(res):
+                    # Si a1 es variable o constante, mapear res -> a1
+                    mapping[res] = a1
+                    # No emitir el cuádruplo todavía: la copia puede eliminarse si res no se usa
+                    new_quads.append((op, a1, a2, res))
+                else:
+                    # Esta instrucción escribe en 'res' (si existe): invalidar mapping de res
+                    if isinstance(res, str) and res in mapping:
+                        # eliminar dependencias que apunten a res
+                        keys_to_remove = [k for k, v in mapping.items() if v == res]
+                        for k in keys_to_remove:
+                            del mapping[k]
+                        del mapping[res]
+                    new_quads.append((op, a1, a2, res))
+
+            # Segunda pasada: eliminar copias redundantes (res := x donde res no se usa)
+            # Para simplicidad dejamos la lista como está; otras pasadas (DCE) limpiarán instrucciones muertas.
+            return new_quads
+
+        def constant_folding(cuads):
+            # Reemplaza operaciones entre constantes por asignaciones de constantes
+            def is_int_literal(x):
+                return isinstance(x, str) and re.match(r'^-?\d+$', x)
+
+            new = []
+            for op, a1, a2, res in cuads:
+                if op in ('+', '-', '*', '/') and is_int_literal(a1) and is_int_literal(a2):
+                    try:
+                        i1 = int(a1)
+                        i2 = int(a2)
+                        if op == '+': val = i1 + i2
+                        elif op == '-': val = i1 - i2
+                        elif op == '*': val = i1 * i2
+                        elif op == '/':
+                            # División entera consistente con MIPS
+                            val = i1 // i2 if i2 != 0 else 0
+                        new.append((':=', str(val), None, res))
+                        continue
+                    except Exception:
+                        pass
+                new.append((op, a1, a2, res))
+            return new
+
+        def dead_code_elimination(cuads):
+            # Eliminación de código muerto mediante análisis de vivacidad simple (backward)
+            live = set()
+            keep = [False] * len(cuads)
+            # Instrucciones con efectos secundarios que siempre deben conservarse
+            side_effect_ops = {'IMPDIG', 'IMPCAD', 'LEERDIG', 'LEERCAD'}
+
+            for i in range(len(cuads)-1, -1, -1):
+                op, a1, a2, res = cuads[i]
+                has_side_effect = op in side_effect_ops
+                uses = set()
+                if isinstance(a1, str) and is_variable(a1): uses.add(a1)
+                if isinstance(a2, str) and is_variable(a2): uses.add(a2)
+
+                # Si la instrucción produce un resultado en 'res'
+                if isinstance(res, str) and is_variable(res):
+                    # Si el resultado es requerido (está vivo) o la instrucción tiene side-effects, la guardamos
+                    if res in live or has_side_effect:
+                        keep[i] = True
+                        # Las variables usadas en esta instrucción se vuelven vivas
+                        live.update(uses)
+                        # Y el resultado deja de estar vivo porque ahora está definido aquí
+                        if res in live:
+                            live.discard(res)
+                    else:
+                        # No usado: instrucción muerta si no tiene efectos secundarios
+                        keep[i] = has_side_effect
+                        if keep[i]:
+                            live.update(uses)
+                            if res in live:
+                                live.discard(res)
+                else:
+                    # No produce resultado (p. ej. prints), conservarla
+                    keep[i] = True
+                    live.update(uses)
+
+            # Reconstruir lista filtrando
+            new = [cuads[i] for i in range(len(cuads)) if keep[i]]
+            return new
+
+        def optimize_cuadruplos(cuads):
+            prev = None
+            current = list(cuads)
+            # Iterar hasta convergencia o tope de N pasadas
+            for _ in range(6):
+                after_cf = constant_folding(current)
+                after_cp = copy_propagation(after_cf)
+                after_dce = dead_code_elimination(after_cp)
+                if after_dce == current:
+                    current = after_dce
+                    break
+                current = after_dce
+            return current
+
+
         # --- Generación de código intermedio (cuadruplos) ---
         cuadruplos = []
         if parse_tree_root:
@@ -741,7 +869,7 @@ if __name__ == "__main__":
             # for i, quad in enumerate(cuadruplos, 1):
             #     print(f"{i:02}: {quad}")
 
-             # Guardar los cuadruplos en un archivo .quad
+            # Guardar los cuadruplos en un archivo .quad
             archivo_salida_quad = archivo_fuente.replace(".txt", ".quad")
             with open(archivo_salida_quad, "w", encoding="utf-8") as archivo_quad:
                 archivo_quad.write(f"{'Num':<5} {'Operador':<10} {'Arg1':<15} {'Arg2':<15} {'Resultado':<15}\n")
@@ -750,7 +878,20 @@ if __name__ == "__main__":
                     op, arg1, arg2, res = quad
                     archivo_quad.write(f"{i:<5} {op:<10} {str(arg1):<15} {str(arg2):<15} {str(res):<15}\n")
 
-            codigo_final = generarCodigoMips(cuadruplos)
+            # Aplicar optimizaciones (copy propagation, constant folding, dead code elimination)
+            cuadruplos_opt = optimize_cuadruplos(cuadruplos)
+
+            # Guardar cuadruplos optimizados
+            archivo_salida_opt = archivo_fuente.replace(".txt", ".opt.quad")
+            with open(archivo_salida_opt, "w", encoding="utf-8") as archivo_opt:
+                archivo_opt.write(f"{'Num':<5} {'Operador':<10} {'Arg1':<15} {'Arg2':<15} {'Resultado':<15}\n")
+                archivo_opt.write("-" * 60 + "\n")
+                for i, quad in enumerate(cuadruplos_opt, 1):
+                    op, arg1, arg2, res = quad
+                    archivo_opt.write(f"{i:<5} {op:<10} {str(arg1):<15} {str(arg2):<15} {str(res):<15}\n")
+
+            # Generar codigo usando cuadruplos optimizados
+            codigo_final = generarCodigoMips(cuadruplos_opt)
             print("\nGeneracion de Codigo")
             print(codigo_final)
             

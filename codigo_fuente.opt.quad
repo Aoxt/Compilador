@@ -1,0 +1,6 @@
+Num   Operador   Arg1            Arg2            Resultado      
+------------------------------------------------------------
+1     IMPCAD     "Hola Mundo"    None            None           
+2     LEERDIG    None            None            resultado      
+3     +          resultado       2               t3             
+4     IMPDIG     t3              None            None           
